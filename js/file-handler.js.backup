@@ -1,0 +1,166 @@
+"use strict";
+
+import { state } from "./state.js";
+import { isJSONFilename } from "./filename.js";
+
+
+export function supportsFileSystemAccess() {
+
+    return (
+        typeof window.showOpenFilePicker ===
+        "function"
+    );
+}
+
+
+export async function selectJSONFile(
+    fallbackInput
+) {
+
+    /*
+     * Prefer File System Access API.
+     * This gives us a writable FileSystemFileHandle.
+     */
+
+    if (supportsFileSystemAccess()) {
+
+        try {
+
+            const handles =
+                await window.showOpenFilePicker({
+                    multiple: false,
+                    types: [
+                        {
+                            description:
+                                "JSON files",
+                            accept: {
+                                "application/json":
+                                    [".json"]
+                            }
+                        }
+                    ]
+                });
+
+            const handle =
+                handles[0];
+
+            if (!handle) {
+                return null;
+            }
+
+            const file =
+                await handle.getFile();
+
+            state.fileHandle =
+                handle;
+
+            state.selectedFile =
+                file;
+
+            return file;
+
+        } catch (error) {
+
+            /*
+             * User cancelled the picker.
+             */
+
+            if (
+                error &&
+                error.name ===
+                    "AbortError"
+            ) {
+                return null;
+            }
+
+            throw error;
+        }
+    }
+
+
+    /*
+     * Fallback for browsers without
+     * File System Access API.
+     */
+
+    return new Promise(
+        resolve => {
+
+            fallbackInput.value = "";
+
+            fallbackInput.onchange =
+                event => {
+
+                    const file =
+                        event.target.files[0];
+
+                    if (!file) {
+                        resolve(null);
+                        return;
+                    }
+
+                    if (
+                        !isJSONFilename(
+                            file.name
+                        )
+                    ) {
+                        throw new Error(
+                            "Please select a .json file."
+                        );
+                    }
+
+                    state.fileHandle =
+                        null;
+
+                    state.selectedFile =
+                        file;
+
+                    resolve(file);
+                };
+
+            fallbackInput.click();
+        }
+    );
+}
+
+
+export async function readSelectedFile() {
+
+    if (!state.selectedFile) {
+
+        throw new Error(
+            "Please select a JSON file first."
+        );
+    }
+
+    /*
+     * Read from the current file handle when available.
+     * This ensures we are working with the actual file.
+     */
+
+    if (state.fileHandle) {
+
+        const file =
+            await state.fileHandle.getFile();
+
+        state.selectedFile =
+            file;
+
+        return await file.text();
+    }
+
+    return await state.selectedFile.text();
+}
+
+
+export function clearSelectedFile() {
+
+    state.selectedFile = null;
+    state.fileHandle = null;
+}
+
+
+export function canUpgradeOriginalFile() {
+
+    return !!state.fileHandle;
+}
